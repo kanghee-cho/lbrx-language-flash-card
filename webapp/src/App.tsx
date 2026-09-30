@@ -26,12 +26,14 @@ import {
   appDb,
   cardsRepo,
   decksRepo,
+  mediaRepo,
   reviewLogsRepo,
   syncEngine,
   useSyncStatus,
 } from './appServices'
 import { getAuthState, setIdToken, signOut, useAuthState } from './authStore'
 import { useShortcuts } from './core/shortcuts'
+import { attachImageFile, resolveMediaObjectUrl, uploadPendingMedia } from './data/mediaFiles'
 import type { ShareRecord, SharePreview, StudyMode } from './data/types'
 import { updateAppSettings, useAppSettings } from './settingsStore'
 
@@ -44,6 +46,30 @@ interface CardFormState {
   tags: string
   sourceLang: string
   targetLang: string
+  imageMediaId: string | null
+}
+
+function useMediaImageUrl(mediaId: string | null | undefined): string | null {
+  const auth = useAuthState()
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setUrl(null)
+    if (!mediaId) {
+      return
+    }
+    void resolveMediaObjectUrl(appDb, apiClient, auth.idToken, mediaId).then((resolved) => {
+      if (!cancelled) {
+        setUrl(resolved)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mediaId, auth.idToken])
+
+  return url
 }
 
 function parseTags(value: string): string[] {
@@ -486,8 +512,12 @@ function CardEditorPage({ mode }: { mode: 'new' | 'edit' }) {
     tags: '',
     sourceLang: 'ja',
     targetLang: 'en',
+    imageMediaId: null,
   })
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const existingImageUrl = useMediaImageUrl(card?.imageMediaId)
 
   useEffect(() => {
     if (card && deck) {
@@ -500,7 +530,9 @@ function CardEditorPage({ mode }: { mode: 'new' | 'edit' }) {
         tags: card.tags.join(', '),
         sourceLang: deck.sourceLang,
         targetLang: deck.targetLang,
+        imageMediaId: card.imageMediaId ?? null,
       })
+      setImagePreviewUrl(null)
     } else if (!card && deck) {
       setFormState((current) => ({
         ...current,
@@ -529,6 +561,7 @@ function CardEditorPage({ mode }: { mode: 'new' | 'edit' }) {
         example: formState.example,
         memo: formState.memo,
         tags: parseTags(formState.tags),
+        imageMediaId: formState.imageMediaId,
       })
     } else {
       await cardsRepo.create({
@@ -539,6 +572,7 @@ function CardEditorPage({ mode }: { mode: 'new' | 'edit' }) {
         example: formState.example,
         memo: formState.memo,
         tags: parseTags(formState.tags),
+        imageMediaId: formState.imageMediaId,
       })
     }
 
@@ -640,6 +674,54 @@ function CardEditorPage({ mode }: { mode: 'new' | 'edit' }) {
           />
         </label>
         <label>
+          <span>Image (optional, up to 2 MiB)</span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (!file) {
+                return
+              }
+              setImageError(null)
+              try {
+                const { mediaId, objectUrl } = await attachImageFile(appDb, mediaRepo, file)
+                setFormState((current) => ({ ...current, imageMediaId: mediaId }))
+                setImagePreviewUrl(objectUrl)
+                const idToken = getAuthState().idToken
+                if (idToken) {
+                  void uploadPendingMedia(appDb, mediaRepo, apiClient, idToken, mediaId).catch(
+                    () => undefined,
+                  )
+                }
+              } catch (err) {
+                setImageError(err instanceof Error ? err.message : 'Could not attach image.')
+              }
+            }}
+          />
+          {imageError ? <p className="form-error">{imageError}</p> : null}
+          {imagePreviewUrl || existingImageUrl ? (
+            <div className="inline-actions">
+              <img
+                src={imagePreviewUrl ?? existingImageUrl ?? undefined}
+                alt="Card attachment preview"
+                style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '8px' }}
+              />
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => {
+                  setImagePreviewUrl(null)
+                  setFormState((current) => ({ ...current, imageMediaId: null }))
+                }}
+              >
+                Remove image
+              </button>
+            </div>
+          ) : null}
+        </label>
+        <label>
           <span>Tags</span>
           <input
             value={formState.tags}
@@ -691,6 +773,7 @@ function StudyPage() {
   const [startedAt, setStartedAt] = useState(Date.now())
 
   const currentCard = dueCards[0]
+  const cardImageUrl = useMediaImageUrl(currentCard?.imageMediaId)
   const choiceOptions = useMemo(() => {
     if (!currentCard) {
       return []
@@ -782,6 +865,13 @@ function StudyPage() {
                 </button>
               ) : null}
             </div>
+            {cardImageUrl ? (
+              <img
+                src={cardImageUrl}
+                alt="Card attachment"
+                style={{ maxWidth: '240px', maxHeight: '240px', borderRadius: '8px', marginTop: '0.5rem' }}
+              />
+            ) : null}
           </div>
 
           {mode === 'typing' && !revealed ? (

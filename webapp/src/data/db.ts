@@ -8,6 +8,11 @@ import type {
   SyncMetaRecord,
 } from './types'
 
+export interface MediaBlobRecord {
+  id: string
+  blob: Blob
+}
+
 export class AppDatabase extends Dexie {
   decks!: EntityTable<LocalDeckRecord, 'id'>
   cards!: EntityTable<LocalCardRecord, 'id'>
@@ -15,6 +20,7 @@ export class AppDatabase extends Dexie {
   media!: EntityTable<LocalMediaRecord, 'id'>
   cardStates!: EntityTable<CardStateRecord, 'cardId'>
   syncMeta!: EntityTable<SyncMetaRecord, 'key'>
+  mediaBlobs!: EntityTable<MediaBlobRecord, 'id'>
 
   constructor(name = 'lbrx-language-flash-card') {
     super(name)
@@ -27,6 +33,10 @@ export class AppDatabase extends Dexie {
       media: 'id, dirty, hlc, uploaded, deletedAt, createdAt',
       cardStates: 'cardId, due, lastReview, state',
       syncMeta: 'key',
+    })
+
+    this.version(2).stores({
+      mediaBlobs: 'id',
     })
   }
 }
