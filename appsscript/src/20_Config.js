@@ -1,6 +1,7 @@
 var Config = (function () {
   var spreadsheetMemo = null;
   var allowedClientIdsMemo = null;
+  var allowedEmailsMemo = null;
 
   function getScriptProperties() {
     return PropertiesService.getScriptProperties();
@@ -58,11 +59,26 @@ var Config = (function () {
     return allowedClientIdsMemo.slice();
   }
 
+  // Optional allowlist. When ALLOWED_EMAILS is unset or empty, every verified
+  // Google account is permitted (backward compatible default). When set, only
+  // the listed emails (case-insensitive) may authenticate.
+  function getAllowedEmails() {
+    if (allowedEmailsMemo === null) {
+      var raw = getScriptProperties().getProperty('ALLOWED_EMAILS') || '';
+      allowedEmailsMemo = raw
+        .split(',')
+        .map(function (value) { return value.trim().toLowerCase(); })
+        .filter(function (value) { return !!value; });
+    }
+    return allowedEmailsMemo.slice();
+  }
+
   return {
     getScriptProperties: getScriptProperties,
     getRequiredProperty: getRequiredProperty,
     getSpreadsheet: getSpreadsheet,
     getOrCreateSheet: getOrCreateSheet,
-    getAllowedClientIds: getAllowedClientIds
+    getAllowedClientIds: getAllowedClientIds,
+    getAllowedEmails: getAllowedEmails
   };
 })();

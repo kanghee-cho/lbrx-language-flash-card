@@ -45,6 +45,12 @@ var Auth = (function () {
     }
 
     var verified = PureTokenInfo.validateTokenInfo(parsed, Config.getAllowedClientIds(), Math.floor(Date.now() / 1000));
+
+    var allowedEmails = Config.getAllowedEmails();
+    if (allowedEmails.length > 0 && allowedEmails.indexOf(verified.email.toLowerCase()) === -1) {
+      throw new AppError('unauthorized', 'This Google account is not permitted to use this app');
+    }
+
     cache.put(cacheKey, JSON.stringify(verified), 60);
     return verified;
   }

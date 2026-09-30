@@ -37,12 +37,19 @@ Set these in **Project Settings** → **Script properties**:
 
 - `SPREADSHEET_ID` = the Google Sheet ID used as the database
 - `GOOGLE_CLIENT_IDS` = one or more Google OAuth client IDs, comma-separated
+- `ALLOWED_EMAILS` = optional, comma-separated allowlist of Google account emails
+  permitted to sign in. Leave unset/empty to allow any verified Google account
+  (anyone who has the deployed web app URL and your OAuth client ID can then sign
+  in with their own account; their data stays isolated from yours by user ID, but
+  it still consumes your Sheet/Drive/Apps Script quota). Set this if you want to
+  restrict the app to yourself or a small trusted group.
 
 Example:
 
 ```text
 SPREADSHEET_ID=1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
 GOOGLE_CLIENT_IDS=1234567890-abcdefg.apps.googleusercontent.com
+ALLOWED_EMAILS=you@gmail.com,friend@gmail.com
 ```
 
 ## Google Sheet layout
@@ -180,6 +187,7 @@ The backend validates the token via Google's `tokeninfo` endpoint and then check
 - `iss` is `accounts.google.com` or `https://accounts.google.com`
 - `exp` is still in the future
 - `email_verified` is true
+- if `ALLOWED_EMAILS` is set, `email` (case-insensitive) is in that list
 
 ## Transport rules the frontend must obey
 
