@@ -1,0 +1,48 @@
+{
+  "name": "lbrx-language-flash-card-webapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "dependencies": {
+    "@react-oauth/google": "^0.12.2",
+    "dexie": "^4.2.1",
+    "dexie-react-hooks": "^4.2.0",
+    "papaparse": "^5.5.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.9.3",
+    "ts-fsrs": "^5.2.6",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.13.3",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "fake-indexeddb": "^6.2.2",
+    "globals": "^16.4.0",
+    "jsdom": "^27.0.0",
+    "oxlint": "^1.81.0",
+    "prettier": "^3.6.2",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.44.1",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.0.3",
+    "vitest": "^3.2.4"
+  }
+}

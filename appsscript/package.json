@@ -1,0 +1,9 @@
+{
+  "name": "lbrx-language-flash-card-appsscript",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test"
+  }
+}
