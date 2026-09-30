@@ -32,7 +32,7 @@ import {
 } from './appServices'
 import { getAuthState, setIdToken, signOut, useAuthState } from './authStore'
 import { useShortcuts } from './core/shortcuts'
-import type { StudyMode } from './data/types'
+import type { ShareRecord, SharePreview, StudyMode } from './data/types'
 import { updateAppSettings, useAppSettings } from './settingsStore'
 
 interface CardFormState {
@@ -308,6 +308,9 @@ function DeckDetailPage() {
   const { deckId = '' } = useParams()
   const deck = useLiveQuery(() => decksRepo.get(deckId), [deckId], undefined)
   const cards = useLiveQuery(() => cardsRepo.listByDeck(deckId), [deckId], [])
+  const [share, setShare] = useState<ShareRecord | null>(null)
+  const [shareStatus, setShareStatus] = useState<'idle' | 'working'>('idle')
+  const [shareError, setShareError] = useState<string | null>(null)
 
   useShortcuts(
     useMemo(
@@ -358,6 +361,67 @@ function DeckDetailPage() {
             Delete deck
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Share this deck</h3>
+          <p>Generates a code the recipient can enter under Import → Share import.</p>
+        </div>
+        <div className="inline-actions">
+          <button
+            className="button"
+            type="button"
+            disabled={shareStatus === 'working'}
+            onClick={async () => {
+              if (!getAuthState().idToken) {
+                setShareError('Sign in first (Settings page) to share a deck.')
+                return
+              }
+              setShareStatus('working')
+              setShareError(null)
+              try {
+                const idToken = getAuthState().idToken as string
+                const result = await apiClient.shareCreate(idToken, { deckId })
+                setShare(result)
+              } catch (err) {
+                setShareError(err instanceof Error ? err.message : 'Share failed.')
+              } finally {
+                setShareStatus('idle')
+              }
+            }}
+          >
+            {share ? 'Refresh share code' : 'Create share code'}
+          </button>
+          {share ? (
+            <button
+              className="button button--ghost"
+              type="button"
+              disabled={shareStatus === 'working'}
+              onClick={async () => {
+                setShareStatus('working')
+                setShareError(null)
+                try {
+                  const idToken = getAuthState().idToken as string
+                  await apiClient.shareRevoke(idToken, { code: share.code })
+                  setShare(null)
+                } catch (err) {
+                  setShareError(err instanceof Error ? err.message : 'Revoke failed.')
+                } finally {
+                  setShareStatus('idle')
+                }
+              }}
+            >
+              Revoke
+            </button>
+          ) : null}
+        </div>
+        {shareError ? <p className="form-error">{shareError}</p> : null}
+        {share ? (
+          <p>
+            Share code: <strong>{share.code}</strong>
+          </p>
+        ) : null}
       </div>
 
       <div className="card">
@@ -1153,13 +1217,107 @@ function SettingsPage() {
 }
 
 function ShareImportPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const [code, setCode] = useState(searchParams.get('code') ?? '')
+  const [preview, setPreview] = useState<SharePreview | null>(null)
+  const [status, setStatus] = useState<'idle' | 'previewing' | 'importing'>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  const lookupPreview = useCallback(async (candidate: string) => {
+    const trimmed = candidate.trim()
+    if (!trimmed) {
+      return
+    }
+    setStatus('previewing')
+    setError(null)
+    setPreview(null)
+    try {
+      const result = await apiClient.shareGet({ code: trimmed })
+      setPreview(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Share code was not found.')
+    } finally {
+      setStatus('idle')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('code')) {
+      void lookupPreview(searchParams.get('code') ?? '')
+    }
+    // Only run once on mount for a link-provided code.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
-    <section className="card empty-state">
-      <h3>Share import UI</h3>
-      <p>
-        TODO: wire a real share import flow to share.create/get/revoke/import once the backend
-        payload shapes are finalized in the parallel backend workstream.
-      </p>
+    <section className="stack">
+      <div className="card form-grid">
+        <div className="section-header">
+          <div>
+            <p className="eyebrow">Import a shared deck</p>
+            <h3>Enter a share code to preview and copy a deck into your account.</h3>
+          </div>
+        </div>
+        <label>
+          <span>Share code</span>
+          <input
+            value={code}
+            placeholder="e.g. AB12CD34"
+            onChange={(event) => setCode(event.target.value)}
+          />
+        </label>
+        <div className="inline-actions">
+          <button
+            className="button"
+            type="button"
+            disabled={status === 'previewing' || !code.trim()}
+            onClick={() => void lookupPreview(code)}
+          >
+            {status === 'previewing' ? 'Looking up…' : 'Preview'}
+          </button>
+        </div>
+        {error ? <p className="form-error">{error}</p> : null}
+      </div>
+
+      {preview ? (
+        <div className="card">
+          <div className="section-header">
+            <h3>{preview.name}</h3>
+            <p>
+              {preview.sourceLang} → {preview.targetLang} · {preview.cardCount} cards
+            </p>
+          </div>
+          <p>{preview.description || 'No description.'}</p>
+          <div className="inline-actions">
+            <button
+              className="button"
+              type="button"
+              disabled={status === 'importing'}
+              onClick={async () => {
+                if (!getAuthState().idToken) {
+                  setError('Sign in first (Settings page) to import a shared deck.')
+                  return
+                }
+                setStatus('importing')
+                setError(null)
+                try {
+                  const idToken = getAuthState().idToken as string
+                  const result = await apiClient.shareImport(idToken, { code: preview.code })
+                  await syncEngine.syncNow().catch(() => undefined)
+                  void navigate(`/decks/${result.deckId}`)
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Import failed.')
+                } finally {
+                  setStatus('idle')
+                }
+              }}
+            >
+              {status === 'importing' ? 'Importing…' : 'Import as a copy'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

@@ -2,14 +2,18 @@ import type {
   ApiEnvelope,
   ApiResponse,
   AuthPingResponse,
-  GenericSharePayload,
-  GenericShareResponse,
   MediaDownloadPayload,
   MediaDownloadResponse,
   MediaRequestUploadPayload,
   MediaRequestUploadResponse,
   MediaUploadPayload,
   MediaUploadResponse,
+  ShareCodePayload,
+  ShareCreatePayload,
+  ShareImportResponse,
+  ShareRecord,
+  ShareRevokeResponse,
+  SharePreview,
   SyncPullPayload,
   SyncPullResponse,
   SyncPushPayload,
@@ -138,28 +142,20 @@ export class ApiClient {
     return this.post('media.download', payload, idToken)
   }
 
-  async shareCreate(
-    idToken: string,
-    payload: GenericSharePayload,
-  ): Promise<GenericShareResponse> {
+  async shareCreate(idToken: string, payload: ShareCreatePayload): Promise<ShareRecord> {
     return this.post('share.create', payload, idToken)
   }
 
-  async shareGet(idToken: string, payload: GenericSharePayload): Promise<GenericShareResponse> {
-    return this.post('share.get', payload, idToken)
+  /** Unauthenticated preview by share code — mirrors the backend's public `share.get` action. */
+  async shareGet(payload: ShareCodePayload): Promise<SharePreview> {
+    return this.post('share.get', payload, null)
   }
 
-  async shareRevoke(
-    idToken: string,
-    payload: GenericSharePayload,
-  ): Promise<GenericShareResponse> {
+  async shareRevoke(idToken: string, payload: ShareCodePayload): Promise<ShareRevokeResponse> {
     return this.post('share.revoke', payload, idToken)
   }
 
-  async shareImport(
-    idToken: string,
-    payload: GenericSharePayload,
-  ): Promise<GenericShareResponse> {
+  async shareImport(idToken: string, payload: ShareCodePayload): Promise<ShareImportResponse> {
     return this.post('share.import', payload, idToken)
   }
 }

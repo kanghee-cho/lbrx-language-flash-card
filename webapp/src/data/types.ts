@@ -195,6 +195,43 @@ export interface MediaDownloadResponse {
 export type GenericSharePayload = Record<string, unknown>
 export type GenericShareResponse = Record<string, unknown>
 
+export interface ShareCreatePayload {
+  deckId: string
+}
+
+export interface ShareRecord {
+  id: string
+  code: string
+  deckId: string
+  createdAt: string
+  revokedAt: string | null
+}
+
+export interface ShareCodePayload {
+  code: string
+}
+
+export interface SharePreview {
+  code: string
+  deckId: string
+  name: string
+  description: string | null
+  sourceLang: string
+  targetLang: string
+  cardCount: number
+}
+
+export interface ShareRevokeResponse {
+  code: string
+  revokedAt: string | null
+}
+
+export interface ShareImportResponse {
+  deckId: string
+  importedCardCount: number
+  importedMediaCount: number
+}
+
 export interface SyncStatus {
   state: 'idle' | 'syncing' | 'error'
   lastError: string | null

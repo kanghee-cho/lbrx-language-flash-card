@@ -6,8 +6,6 @@ import type {
   AuthPingResponse,
   CardRecord,
   DeckRecord,
-  GenericSharePayload,
-  GenericShareResponse,
   MediaDownloadPayload,
   MediaDownloadResponse,
   MediaRecord,
@@ -16,19 +14,25 @@ import type {
   MediaUploadPayload,
   MediaUploadResponse,
   ReviewLogRecord,
+  ShareCodePayload,
+  ShareCreatePayload,
+  ShareImportResponse,
+  ShareRecord,
+  ShareRevokeResponse,
+  SharePreview,
   SyncPullPayload,
   SyncPullResponse,
   SyncPushPayload,
   SyncPushResponse,
 } from '../data/types.ts'
 
-interface ShareRecord {
+interface MockShareRecord {
   id: string
   ownerUserId: string
+  code: string
   deckId: string
   createdAt: string
   revokedAt: string | null
-  payload: GenericSharePayload
 }
 
 interface StoredRow<T> {
@@ -83,7 +87,7 @@ export class MockAppsScriptService {
   private readonly cards = new Map<string, StoredRow<CardRecord>>()
   private readonly reviewLogs = new Map<string, StoredRow<ReviewLogRecord>>()
   private readonly media = new Map<string, StoredRow<MediaRecord>>()
-  private readonly shares = new Map<string, ShareRecord>()
+  private readonly shares = new Map<string, MockShareRecord>()
   private readonly uploadChunks = new Map<string, string[]>()
 
   reset(): void {
@@ -127,13 +131,13 @@ export class MockAppsScriptService {
           envelope.payload as MediaDownloadPayload,
         )
       case 'share.create':
-        return this.handleShareCreate(envelope.idToken, envelope.payload as GenericSharePayload)
+        return this.handleShareCreate(envelope.idToken, envelope.payload as ShareCreatePayload)
       case 'share.get':
-        return this.handleShareGet(envelope.idToken, envelope.payload as GenericSharePayload)
+        return this.handleShareGet(envelope.payload as ShareCodePayload)
       case 'share.revoke':
-        return this.handleShareRevoke(envelope.idToken, envelope.payload as GenericSharePayload)
+        return this.handleShareRevoke(envelope.idToken, envelope.payload as ShareCodePayload)
       case 'share.import':
-        return this.handleShareImport(envelope.idToken, envelope.payload as GenericSharePayload)
+        return this.handleShareImport(envelope.idToken, envelope.payload as ShareCodePayload)
       default:
         return {
           ok: false,
@@ -426,98 +430,123 @@ export class MockAppsScriptService {
     return this.success({ base64: chunks.join(''), mime: media.value.mime })
   }
 
+  private generateShareCode(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    let code = ''
+    do {
+      code = Array.from({ length: 8 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
+    } while ([...this.shares.values()].some((row) => row.code === code))
+    return code
+  }
+
   private handleShareCreate(
     idToken: string | null,
-    payload: GenericSharePayload,
-  ): ApiResponse<GenericShareResponse> {
+    payload: ShareCreatePayload,
+  ): ApiResponse<ShareRecord> {
     const user = this.requireUser(idToken)
     if ('ok' in user) {
       return user
     }
 
-    const deckId = typeof payload.deckId === 'string' ? payload.deckId : null
-    if (!deckId) {
+    const deckId = payload?.deckId
+    const deck = deckId ? this.decks.get(deckId) : undefined
+    if (!deckId || !deck || deck.userId !== user.userId || deck.value.deletedAt) {
       return {
         ok: false,
-        error: { code: 'validation', message: 'deckId is required' },
+        error: { code: 'not_found', message: 'Deck was not found' },
       }
     }
 
-    const shareId = newUuid()
-    this.shares.set(shareId, {
-      id: shareId,
+    const existing = [...this.shares.values()].find(
+      (row) => row.ownerUserId === user.userId && row.deckId === deckId && !row.revokedAt,
+    )
+    if (existing) {
+      return this.success({ ...existing })
+    }
+
+    const id = newUuid()
+    const record: MockShareRecord = {
+      id,
       ownerUserId: user.userId,
+      code: this.generateShareCode(),
       deckId,
       createdAt: new Date().toISOString(),
       revokedAt: null,
-      payload,
-    })
-    return this.success({ shareId, deckId })
+    }
+    this.shares.set(id, record)
+    return this.success({ ...record })
   }
 
-  private handleShareGet(
-    idToken: string | null,
-    payload: GenericSharePayload,
-  ): ApiResponse<GenericShareResponse> {
-    const user = this.requireUser(idToken)
-    if ('ok' in user) {
-      return user
-    }
-
-    const shareId = typeof payload.shareId === 'string' ? payload.shareId : null
-    const share = shareId ? this.shares.get(shareId) : undefined
-    if (!share) {
+  private handleShareGet(payload: ShareCodePayload): ApiResponse<SharePreview> {
+    const code = payload?.code
+    const share = code ? [...this.shares.values()].find((row) => row.code === code) : undefined
+    if (!share || share.revokedAt) {
       return {
         ok: false,
-        error: { code: 'not_found', message: 'Share not found' },
+        error: { code: 'not_found', message: 'Share was not found' },
       }
     }
 
+    const deck = this.decks.get(share.deckId)
+    if (!deck || deck.userId !== share.ownerUserId || deck.value.deletedAt) {
+      return {
+        ok: false,
+        error: { code: 'not_found', message: 'Shared deck is no longer available' },
+      }
+    }
+
+    const cardCount = [...this.cards.values()].filter(
+      (row) => row.userId === share.ownerUserId && row.value.deckId === share.deckId && !row.value.deletedAt,
+    ).length
+
     return this.success({
-      shareId: share.id,
+      code: share.code,
       deckId: share.deckId,
-      revokedAt: share.revokedAt,
-      ownerUserId: share.ownerUserId,
+      name: deck.value.name,
+      description: deck.value.description ?? null,
+      sourceLang: deck.value.sourceLang,
+      targetLang: deck.value.targetLang,
+      cardCount,
     })
   }
 
   private handleShareRevoke(
     idToken: string | null,
-    payload: GenericSharePayload,
-  ): ApiResponse<GenericShareResponse> {
+    payload: ShareCodePayload,
+  ): ApiResponse<ShareRevokeResponse> {
     const user = this.requireUser(idToken)
     if ('ok' in user) {
       return user
     }
 
-    const shareId = typeof payload.shareId === 'string' ? payload.shareId : null
-    const share = shareId ? this.shares.get(shareId) : undefined
+    const code = payload?.code
+    const share = code ? [...this.shares.values()].find((row) => row.code === code) : undefined
     if (!share || share.ownerUserId !== user.userId) {
       return {
         ok: false,
-        error: { code: 'not_found', message: 'Share not found' },
+        error: { code: 'not_found', message: 'Share was not found' },
       }
     }
 
     share.revokedAt = new Date().toISOString()
-    return this.success({ shareId, revokedAt: share.revokedAt })
+    return this.success({ code: share.code, revokedAt: share.revokedAt })
   }
 
   private handleShareImport(
     idToken: string | null,
-    payload: GenericSharePayload,
-  ): ApiResponse<GenericShareResponse> {
+    payload: ShareCodePayload,
+  ): ApiResponse<ShareImportResponse> {
     const user = this.requireUser(idToken)
     if ('ok' in user) {
       return user
     }
 
-    const shareId = typeof payload.shareId === 'string' ? payload.shareId : null
-    const share = shareId ? this.shares.get(shareId) : undefined
+    const code = payload?.code
+    const share = code ? [...this.shares.values()].find((row) => row.code === code) : undefined
     if (!share || share.revokedAt) {
       return {
         ok: false,
-        error: { code: 'not_found', message: 'Share not available' },
+        error: { code: 'not_found', message: 'Share is not available' },
       }
     }
 
@@ -541,8 +570,9 @@ export class MockAppsScriptService {
       },
     })
 
+    let importedCardCount = 0
     for (const card of this.cards.values()) {
-      if (card.userId === share.ownerUserId && card.value.deckId === share.deckId) {
+      if (card.userId === share.ownerUserId && card.value.deckId === share.deckId && !card.value.deletedAt) {
         const newCardId = newUuid()
         this.cards.set(newCardId, {
           userId: user.userId,
@@ -555,9 +585,14 @@ export class MockAppsScriptService {
             createdAt: new Date().toISOString(),
           },
         })
+        importedCardCount += 1
       }
     }
 
-    return this.success({ shareId, importedDeckId: newDeckId })
+    return this.success({
+      deckId: newDeckId,
+      importedCardCount,
+      importedMediaCount: 0,
+    })
   }
 }
