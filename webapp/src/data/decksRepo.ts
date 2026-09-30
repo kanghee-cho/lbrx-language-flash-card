@@ -38,7 +38,7 @@ export class DecksRepo {
 
   async listSummaries(): Promise<DeckSummary[]> {
     const [decks, cards, cardStates] = await Promise.all([
-      this.db.decks.orderBy('name').toArray(),
+      this.db.decks.toCollection().sortBy('name'),
       this.db.cards.toArray(),
       this.db.cardStates.toArray(),
     ])
@@ -64,7 +64,7 @@ export class DecksRepo {
   }
 
   async list(): Promise<LocalDeckRecord[]> {
-    return (await this.db.decks.orderBy('name').toArray()).filter((deck) => !deck.deletedAt)
+    return (await this.db.decks.toCollection().sortBy('name')).filter((deck) => !deck.deletedAt)
   }
 
   async get(id: string): Promise<LocalDeckRecord | undefined> {
