@@ -19,7 +19,7 @@ This `webapp/` package is a Vite + React + TypeScript PWA for the local-first fl
 4. `syncEngine` pulls by cursor, repositories apply remote rows only when remote HLC wins.
 5. Review logs rebuild `cardStates`, which keeps study/due views fast.
 
-`share.*` UI is a stub for later work. Anki `.apkg` import is the other planned extension point next to the CSV importer.
+`share.*` UI supports creating/revoking a share code from a deck and importing by code. Anki `.apkg` import remains a planned extension point next to the CSV importer.
 
 ## Run
 
