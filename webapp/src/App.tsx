@@ -25,6 +25,7 @@ import {
   apiClient,
   appDb,
   cardsRepo,
+  cardStatesRepo,
   decksRepo,
   mediaRepo,
   reviewLogsRepo,
@@ -32,6 +33,8 @@ import {
   useSyncStatus,
 } from './appServices'
 import { getAuthState, setIdToken, signOut, useAuthState } from './authStore'
+import { exportBackup, importBackup } from './data/backup'
+import { getReminderSettings, maybeNotifyDueCards, requestNotificationPermission, setRemindersEnabled } from './core/reminders'
 import { useShortcuts } from './core/shortcuts'
 import { attachImageFile, resolveMediaObjectUrl, uploadPendingMedia } from './data/mediaFiles'
 import type { ShareRecord, SharePreview, StudyMode } from './data/types'
@@ -192,6 +195,11 @@ function DecksPage() {
     targetLang: 'en',
     tags: '',
   })
+
+  useEffect(() => {
+    const totalDue = decks.reduce((sum, deck) => sum + deck.dueCards, 0)
+    maybeNotifyDueCards(totalDue)
+  }, [decks])
 
   async function handleCreateDeck(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1216,6 +1224,10 @@ function SettingsPage() {
   const auth = useAuthState()
   const syncStatus = useSyncStatus()
   const [pingResult, setPingResult] = useState<string>('')
+  const [remindersEnabled, setRemindersEnabledState] = useState(() => getReminderSettings().enabled)
+  const [reminderStatus, setReminderStatus] = useState<string | null>(null)
+  const [backupStatus, setBackupStatus] = useState<string | null>(null)
+  const importFileRef = useRef<HTMLInputElement | null>(null)
 
   return (
     <section className="stack">
@@ -1301,6 +1313,90 @@ function SettingsPage() {
           <li>ID token lives in the JSON body.</li>
           <li>Fetch redirects must stay on the default follow behavior.</li>
         </ul>
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Review reminders</h3>
+          <p>Best-effort local notification while this app is open; not a background push.</p>
+        </div>
+        <label className="inline-actions">
+          <input
+            type="checkbox"
+            checked={remindersEnabled}
+            onChange={async (event) => {
+              const enabled = event.target.checked
+              if (enabled) {
+                const permission = await requestNotificationPermission()
+                if (permission !== 'granted') {
+                  setReminderStatus('Notification permission was not granted.')
+                  setRemindersEnabledState(false)
+                  setRemindersEnabled(false)
+                  return
+                }
+              }
+              setRemindersEnabledState(enabled)
+              setRemindersEnabled(enabled)
+              setReminderStatus(null)
+            }}
+          />
+          <span>Notify me about due cards once per day while the app is open</span>
+        </label>
+        {reminderStatus ? <p className="form-error">{reminderStatus}</p> : null}
+      </div>
+
+      <div className="card">
+        <div className="section-header">
+          <h3>Backup & restore</h3>
+          <p>IndexedDB alone is not a backup — export a snapshot you control.</p>
+        </div>
+        <div className="inline-actions">
+          <button
+            className="button"
+            type="button"
+            onClick={async () => {
+              const blob = await exportBackup(appDb)
+              const url = URL.createObjectURL(blob)
+              const anchor = document.createElement('a')
+              anchor.href = url
+              anchor.download = `lbrx-flashcards-backup-${new Date().toISOString().slice(0, 10)}.json`
+              anchor.click()
+              URL.revokeObjectURL(url)
+              setBackupStatus('Backup downloaded.')
+            }}
+          >
+            Export backup
+          </button>
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+          >
+            Restore from backup
+          </button>
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json"
+            style={{ display: 'none' }}
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (!file) {
+                return
+              }
+              try {
+                const summary = await importBackup(appDb, cardStatesRepo, file)
+                setBackupStatus(
+                  `Restored ${summary.decks} decks, ${summary.cards} cards, ${summary.reviewLogs} review logs.`,
+                )
+              } catch (err) {
+                setBackupStatus(err instanceof Error ? err.message : 'Restore failed.')
+              }
+            }}
+          />
+        </div>
+        {backupStatus ? <p>{backupStatus}</p> : null}
       </div>
     </section>
   )
